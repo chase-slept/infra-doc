@@ -30,3 +30,9 @@ I've just created this project and as such there's a long list of things I would
 ## Network Architecture
 
 ![Diagram of network architecture](/assets/ArchV1.png)
+Further documentation pending...
+
+## Media Workflow
+
+![Diagram of media workflow](/assets/MediaWorkflowV1.png)
+Further documentation pending...
