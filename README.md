@@ -22,10 +22,10 @@ As my home network and homelab have grown over the past year, so too have their 
 I've just created this project and as such there's a long list of things I would like to accomplish, but to start:
 
 - ~~create diagrams for network architecture and media workflow~~
-- Create write-up or README for network architecture (in this repo), ~~mostly done, need to add Caddy repo~~
-- Create write-up or README for media workflow (~~in a separate repo~~)
+- ~~Create write-up or README for network architecture (in this repo)~~ mostly done, need to add Caddy repo and documentation
+- ~~Create write-up or README for media workflow (moved to a separate repo~~)
 - Create/Tie in other repos/projects as they relate to the broader picture here:
-  - individual scripts (LFTP, MQTT, Webhook, sync-script, etc.)
+  - ~~individual scripts (LFTP, MQTT, Webhook, sync-script, etc.)  moved to separate repo~~
   - Terraform, Ansible, Docker Compose, etc.
   - Caddy/Bastion server configuration
   - EdgeRouter? If it makes sense to document while preserving secrets
