@@ -2,7 +2,7 @@
   Hello! 👋
 </h1>
 
-This repository is the home for my infrastructure documentation. Here I will attempt to detail my homelab infrastructure, particularly the media automation workflow and corresponding scripts.
+This repository is the home for my infrastructure documentation. Here I will attempt to detail my homelab infrastructure, particularly the network architecture and [media workflow](https://github.com/chase-slept/media-workflow).
 
 ## Table of Contents
 
@@ -12,7 +12,6 @@ This repository is the home for my infrastructure documentation. Here I will att
 - [Network Architecture](#network-architecture)
   - [Local Network](#local-network)
   - [External Network](#external-network)
-- [Media Workflow](#media-workflow)
 
 ## About the Project
 
@@ -23,10 +22,10 @@ As my home network and homelab have grown over the past year, so too have their 
 I've just created this project and as such there's a long list of things I would like to accomplish, but to start:
 
 - ~~create diagrams for network architecture and media workflow~~
-- Create write-up or README for network architecture (in this repo)
-- Create write-up or README for media workflow (maybe also in this repo?)
+- Create write-up or README for network architecture (in this repo), ~~mostly done, need to add Caddy repo~~
+- Create write-up or README for media workflow (~~in a separate repo~~)
 - Create/Tie in other repos/projects as they relate to the broader picture here:
-  - individual scripts (LFTP, MQTT, Webhook, etc.)
+  - individual scripts (LFTP, MQTT, Webhook, sync-script, etc.)
   - Terraform, Ansible, Docker Compose, etc.
   - Caddy/Bastion server configuration
   - EdgeRouter? If it makes sense to document while preserving secrets
@@ -43,9 +42,4 @@ On the right-hand side of this diagram is my internal local network. Most of the
 
 To access some of these services on an external network (i.e. over the internet, pictured on the left-hand side of the diagram), I've configured a Wireguard VPN tunnel on an external server (VPS) somewhere on the internet. With one endpoint on my Pi and the other endpoint on the VPS, this creates a secure, encrypted connection between my local network and an external network. To expand on this a bit, the VPS is configured as a reverse proxy using Caddy. It also doubles as a web server and serves a static website. Using a domain name and pointing its DNS records to the VPS allow for me to route traffic easily and securely over the internet to the reverse proxy, across the secure Wireguard tunnel, and then directly to my internal services and applications.
 
-One major advantage to this is that if your ISP is like mine and uses CG-NAT to distribute IP addresses, you can forward traffic 'around' the CG-NAT, bypassing the port-forwarding limitations that CG-NAT introduces to local networks. With a properly fast internet connection, this would allow you to access your local media content over the internet via Plex/Jellyfin/etc. Unfortunately, my internet connection has terrible upload speed, preventing me from accessing anything remotely but audiobooks and other small files. To work around this, I've complicated the external network even further by adding a high-bandwidth server to the mix. This server specifically runs Jellyfin and has a smaller storage capacity, but it has plenty of bandwidth for streaming media files. To enable me to transfer files to and from this server and the local NAS, I've established an SSH Jump through the Bastion VPS and on to the Pi. This connection is necessary to facilitate the media workflow that organizes and transfers files across both networks, detailed below.
-
-## Media Workflow
-
-![Diagram of media workflow](/assets/MediaWorkflowV1.png)
-Further documentation pending...
+One major advantage to this is that if your ISP is like mine and uses CG-NAT to distribute IP addresses, you can forward traffic 'around' the CG-NAT, bypassing the port-forwarding limitations that CG-NAT introduces to local networks. With a properly fast internet connection, this would allow you to access your local media content over the internet via Plex/Jellyfin/etc. Unfortunately, my internet connection has terrible upload speed, preventing me from accessing anything remotely but audiobooks and other small files. To work around this, I've complicated the external network even further by adding a high-bandwidth server to the mix. This server specifically runs Jellyfin and has a smaller storage capacity, but it has plenty of bandwidth for streaming media files. To enable me to transfer files to and from this server and the local NAS, I've established an SSH Jump through the Bastion VPS and on to the Pi. This connection is necessary to facilitate the media workflow that organizes and transfers files across both networks. Check out the [Media Workflow](https://github.com/chase-slept/media-workflow) project for more information.
