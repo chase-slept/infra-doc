@@ -49,7 +49,7 @@ One major advantage to this is that if your ISP is like mine and uses CG-NAT to 
 
 ### Wireguard
 
-To secure the connection between the Bastion server and my local network, I've configured Wireguard as the only allowed connection. Any other requests to the Bastion server are dropped by the firewall by default, and any reverse proxy connections through Caddy use the Wireguard interface to encrypt the connection. One challenge I encountered here was separating the network traffic once it entered my local network. To get around this issue, I've set PostUp and PostDown rules on both Wireguard endpoints to define important firewall and routing rules. This allows our rules to be confined to the Wireguard interface and apply whenever the interface is created (and removed when disabled). On the Bastion server, the Wireguard configuration and its routing rules look like this (I've sanitized sensitive IPs and values):
+To secure the connection between the Bastion server and my local network, I've configured Wireguard as the only allowed connection. Any other requests to the Bastion server are dropped by the firewall by default, and any reverse proxy connections through Caddy use the Wireguard interface to encrypt the connection. One challenge I encountered here was the return traffic getting lost on the local network. To resolve this issue, I've set PreUp and PostDown rules on the Bastion endpoint to define important routing rules. This allows our rules to be applied to the interface only when it is enabled and removed when it is disabled. On the Bastion server, the Wireguard configuration and its routing rules look like this (I've sanitized sensitive IPs and values):
 
 ```
 [Interface]
@@ -60,9 +60,6 @@ Address = 172.0.0.1/32
 # packet forwarding
 PreUp = sysctl -w net.ipv4.ip_forward=1
 
-# port forwarding
-PreUp = iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 443 -j DNAT --to-destination 172.0.0.2:80
-PostDown = iptables -t nat -D PREROUTING -i eth0 -p tcp --dport 443 -j DNAT --to-destination 172.0.0.2:80
 # packet masquerading
 PreUp = iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
 PostDown = iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE
@@ -73,7 +70,7 @@ AllowedIPs = 172.0.0.2, 10.0.0.0/24, 10.10.10.0/24
 PersistentKeepalive = 25
 ```
 
-The `Address` are our Wireguard interface addresses and we'll use these in Caddy to reverse proxy though the WG interface. `AllowedIPs` includes the other WG endpoint on our Raspberry Pi, our local network, and our Docker network, so we can likewise connect and reverse proxy to those. Our first PreUp rule enables the sysctl ip_forward value which allows us to forward packets. The next PreUp/PostDown sets an iptables Destination NAT from the https port 443 on our Bastion server to port 80 on our local, non-https WG endpoint. This is required for our (firewall allowed) SSL-secured traffic arriving from the internet on the Bastion server to forward through our local network and arrive at port 80 (this is for reverse proxying to any webserver we may be running locally--this is optional and the ports can be configured for SSL termination also). The final PreUp/PostDown rule sets an iptables DNS masquerade on the Wireguard interface. This defines the route back from the local network, once it is arrives and looks to return the request. These NAT rules would normally be set on the server directly, but since we only really want these to apply on the WG interface adding them directly into the configuration as Pre-Post rules is a simple way to allow them to apply only to this interface and persist until the interface is closed.
+The `Address` is our Wireguard interface address and we'll use this in Caddy to reverse proxy though the WG interface. `AllowedIPs` includes the other WG endpoint on our Raspberry Pi, our local network, and our Docker network, so we can likewise connect and reverse proxy to those. Our first PreUp rule enables the sysctl ip_forward value which allows us to forward packets over the interface. The next PreUp/PostDown rule sets an iptables SNAT (or Masquerade) on the Wireguard interface. This defines the return route for our requests after they're forwarded to the local network. These rules would normally be set on the server directly, but since we only really want these to apply on the WG interface, adding them directly into the configuration as Pre/Post rules is a simple way to allow them to apply only to this interface and persist until the interface is closed.
 
 On the client- or local-side, we have a matching configuration file that looks like this:
 
@@ -83,11 +80,6 @@ Address = 172.0.0.2/24
 ListenPort = 51820
 PrivateKey = <value>
 
-# custom routing table / policy routing
-#Table = 123
-#PostUp = ip rule add from 172.0.0.2 table 123 priority 456
-#PostDown = ip rule del from 172.0.0.2 table 123 priority 456
-
 [Peer]
 PublicKey = <value>
 AllowedIPs = 172.0.0.1
@@ -95,10 +87,7 @@ Endpoint = <static IP of Bastion Server>:51820
 PersistentKeepalive = 25
 ```
 
-Here the configuration is a little simpler. We've added a custom routing table and policy-based routing. This allows the network traffic to stay confined to its own table, rather than using the default routing rules defined on the Raspberry Pi. Without this, the traffic gets 'lost' as it travels beyond the first hop and isn't able to return back from where it came, resulting in a loop as it tries to follow the routes through our local network (which doesn't know about the Wireguard interface and its extra routes, like to the Docker network). We're essentially 'marking' the traffic here, so that it can be routed correctly through the proper interface and on to other hops/networks. `Endpoint` here needs to point to the static IP of our Bastion Server. More info about this can be [found here](https://www.procustodibus.com/blog/2023/11/wireguard-port-forward-from-internet-multi-hop/). Setting up Wireguard for this use-case was a bit of an endeavor, but tackling the problems as they come up was very do-able with a bit of networking know-how and some Google-fu.
-
-
-
+Here the configuration is a little simpler. The `Endpoint` here needs to point to the static IP of our Bastion Server and the `AllowedIPs` incudes only the other end of the tunnel. That's all the configuration required to create our secure Wireguard tunnel.
 ### Caddy Server
 
 More documentation on this in-progress ...
