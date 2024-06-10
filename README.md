@@ -12,6 +12,7 @@ This repository is the home for my infrastructure documentation. Here I will att
 - [Network Architecture](#network-architecture)
   - [Local Network](#local-network)
   - [External Network](#external-network)
+  - [Wireguard](#wireguard)
   - [Caddy Server](#caddy-server)
 
 ## About the Project
@@ -34,6 +35,7 @@ I've just created this project and as such there's a long list of things I would
 ## Network Architecture
 
 ![Diagram of network architecture](/assets/ArchV1.png)
+(You may want to click to expand the image for better viewing.)
 
 ### Local Network
 
@@ -44,6 +46,58 @@ On the right-hand side of this diagram is my local network, the primary purpose 
 To access some of these services on an external network (i.e. over the internet, pictured on the left-hand side of the diagram), I've configured a Wireguard VPN tunnel on an external server (VPS) somewhere on the internet. With one endpoint on my Pi and the other endpoint on the VPS, this creates a secure, encrypted connection between my local network and an external network. To expand on this a bit, the VPS is configured as a reverse proxy using Caddy. It also doubles as a web server and serves a static website. Using a domain name and pointing its DNS records to the VPS's static IP allows me to route traffic easily and securely over the internet to the reverse proxy, through the secure Wireguard tunnel, and then directly to my internal services and applications.
 
 One major advantage to this is that if your ISP is like mine and uses CG-NAT to distribute IP addresses, you can forward traffic 'around' the CG-NAT, bypassing the port-forwarding limitations that CG-NAT introduces to local networks. With a properly fast internet connection, this would allow you to access your local media content over the internet via Plex/Jellyfin/etc. Unfortunately, my internet connection has terrible upload speed, preventing me from accessing anything remotely but audiobooks and other small files. To work around this, I've complicated the external network even further by adding a high-bandwidth server to the mix! This server specifically runs Jellyfin and has a smaller storage capacity, but it has plenty of bandwidth for streaming media files. To enable me to transfer files to and from this server and the local NAS, I've established an SSH Jump through the VPS (now acting as a Bastion server) and on to the Pi through the Wireguard tunnel; another secure, end-to-end encrypted connection. This connection is necessary to facilitate the media workflow that organizes and transfers files across both networks. Check out the [Media Workflow](https://github.com/chase-slept/media-workflow) project for more information on that.
+
+### Wireguard
+
+To secure the connection between the Bastion server and my local network, I've configured Wireguard as the only allowed connection. Any other requests to the Bastion server are dropped by the firewall by default, and any reverse proxy connections through Caddy use the Wireguard interface to encrypt the connection. One challenge I encountered here was separating the network traffic once it entered my local network. To get around this issue, I've set PostUp and PostDown rules on both Wireguard endpoints to define important firewall and routing rules. This allows our rules to be confined to the Wireguard interface and apply whenever the interface is created (and removed when disabled). On the Bastion server, the Wireguard configuration and its routing rules look like this (I've sanitized sensitive IPs and values):
+
+```
+[Interface]
+PrivateKey = <value>
+ListenPort = 51820
+Address = 172.0.0.1/32
+
+# packet forwarding
+PreUp = sysctl -w net.ipv4.ip_forward=1
+
+# port forwarding
+PreUp = iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 443 -j DNAT --to-destination 172.0.0.2:80
+PostDown = iptables -t nat -D PREROUTING -i eth0 -p tcp --dport 443 -j DNAT --to-destination 172.0.0.2:80
+# packet masquerading
+PreUp = iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
+PostDown = iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE
+
+[Peer]
+PublicKey = <value>
+AllowedIPs = 172.0.0.2, 10.0.0.0/24, 10.10.10.0/24
+PersistentKeepalive = 25
+```
+
+The `Address` are our Wireguard interface addresses and we'll use these in Caddy to reverse proxy though the WG interface. `AllowedIPs` includes the other WG endpoint on our Raspberry Pi, our local network, and our Docker network, so we can likewise connect and reverse proxy to those. Our first PreUp rule enables the sysctl ip_forward value which allows us to forward packets. The next PreUp/PostDown sets an iptables Destination NAT from the https port 443 on our Bastion server to port 80 on our local, non-https WG endpoint. This is required for our (firewall allowed) SSL-secured traffic arriving from the internet on the Bastion server to forward through our local network and arrive at port 80 (this is for reverse proxying to any webserver we may be running locally--this is optional and the ports can be configured for SSL termination also). The final PreUp/PostDown rule sets an iptables DNS masquerade on the Wireguard interface. This defines the route back from the local network, once it is arrives and looks to return the request. These NAT rules would normally be set on the server directly, but since we only really want these to apply on the WG interface adding them directly into the configuration as Pre-Post rules is a simple way to allow them to apply only to this interface and persist until the interface is closed.
+
+On the client- or local-side, we have a matching configuration file that looks like this:
+
+```
+[Interface]
+Address = 172.0.0.2/24
+ListenPort = 51820
+PrivateKey = <value>
+
+# custom routing table / policy routing
+#Table = 123
+#PostUp = ip rule add from 172.0.0.2 table 123 priority 456
+#PostDown = ip rule del from 172.0.0.2 table 123 priority 456
+
+[Peer]
+PublicKey = <value>
+AllowedIPs = 172.0.0.1
+Endpoint = <static IP of Bastion Server>:51820
+PersistentKeepalive = 25
+```
+
+Here the configuration is a little simpler. We've added a custom routing table and policy-based routing. This allows the network traffic to stay confined to its own table, rather than using the default routing rules defined on the Raspberry Pi. Without this, the traffic gets 'lost' as it travels beyond the first hop and isn't able to return back from where it came, resulting in a loop as it tries to follow the routes through our local network (which doesn't know about the Wireguard interface and its extra routes, like to the Docker network). We're essentially 'marking' the traffic here, so that it can be routed correctly through the proper interface and on to other hops/networks. `Endpoint` here needs to point to the static IP of our Bastion Server. More info about this can be [found here](https://www.procustodibus.com/blog/2023/11/wireguard-port-forward-from-internet-multi-hop/). Setting up Wireguard for this use-case was a bit of an endeavor, but tackling the problems as they come up was very do-able with a bit of networking know-how and some Google-fu.
+
+
 
 ### Caddy Server
 
