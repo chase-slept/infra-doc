@@ -88,6 +88,49 @@ PersistentKeepalive = 25
 ```
 
 Here the configuration is a little simpler. The `Endpoint` here needs to point to the static IP of our Bastion Server and the `AllowedIPs` incudes only the other end of the tunnel. That's all the configuration required to create our secure Wireguard tunnel.
+
 ### Caddy Server
 
-More documentation on this in-progress ...
+With the Wireguard tunnel up and running, we can use a reverse proxy to route our requests a little easier. I ended up using Caddy for this as it was extremely easy to set up and generates its own SSL certificates pretty easily. In typical fashion, my setup gets a little over-complicated. First, I have a Caddy instance running on the Bastion (VPS) server. It handles wildcard certificates for the whole domain and its subdomains using a Cloudflare Origin Certificate and sends requests from subdomains to the Wireguard client IP along with an arbitrary port number (this port number doesn't need to match the app/service, but in most cases I've left it as-is for clarity). On the client-side, a second Caddy instance translates the proxied request to the app's internal IP and port number. This is probably confusing so here are some examples, starting with the Bastion Caddyfile:
+
+```caddy
+## Wildcard Cert (CF Origin)
+*.slept.dev {
+  tls /path/to/normal/cert.pem /path/to/normal/cert.key {
+    client_auth {
+        mode require_and_verify
+        trusted_ca_cert_file /path/to/origin/cert.pem
+    }
+  }
+}
+
+## Webservers
+# Caddy Static
+slept.dev {
+    root * /var/www/chase-blog
+    file_server
+}
+
+# AWS S3 Static
+study.slept.dev {
+    reverse_proxy {
+      to <redact>.s3-website.us-east-2.amazonaws.com
+      header_up Host {upstream_hostport}
+    }
+}
+
+# Service/App Example
+<service>.slept.dev {
+    reverse_proxy http://172.0.0.2:9999
+}
+```
+
+The example above shows I've configured the Cloudflare Origin Certificate and the SSL certificates (you can also use the TLS directive on its own to generate certificate via DNS challenge with even less config), how Caddy's web server is configured, and how to configure apps via the reverse_proxy directive. The last example shows how most of my local services are configured with a subdomain and reverse_proxy using the Wireguard IP our WG interface created suffixed with a port number, 9999 in this case. You may notice that the WG IP is not an HTTPS address. This is intentional, as the WG tunnel is already end-to-end encrypted and does not need to be secured further. On the client side, the Caddyfile example to complete this route would look like this:
+
+```
+:9999 {
+        reverse_proxy http://10.0.0.10:9990
+}
+```
+
+Instead of using the subdomain here, we only need to refer to the arbitrary port number as the http headers already contain the rest of the required information. We use the same reverse_proxy directive and point it to the local IP (no https, unless you have self-signed certificates on your local services already) and the app's exposed port. This is pretty easy to configure and not much else is required other than maintaining the two separate Caddyfiles and Caddy instances. In the future I hope to trim this down by figuring out how to add the required information directly to the headers sent upstream via the reverse_proxy directive, but this setup got me up and running quickly and without any problems. There's always room to improve on our designs, and this is a great example of that!
